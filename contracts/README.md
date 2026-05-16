@@ -1,66 +1,52 @@
-## Foundry
+# LexProtocol Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Foundry workspace for the LexProtocol truth layer.
 
-Foundry consists of:
+## Build
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```bash
+forge build
 ```
 
-### Test
+## Test
 
-```shell
-$ forge test
+```bash
+forge test
 ```
 
-### Format
+## Local Deploy Dry Run
 
-```shell
-$ forge fmt
+This compiles and executes the deploy script locally without broadcasting:
+
+```bash
+export PRIVATE_KEY="<deployer_private_key>"
+export ORACLE_ADDRESS="<oracle_address>"
+
+forge script script/Deploy.s.sol:Deploy
 ```
 
-### Gas Snapshots
+## Monad Testnet Deploy
 
-```shell
-$ forge snapshot
+Monad testnet uses chain ID `10143`. The contracts use native MON as collateral.
+
+```bash
+export PRIVATE_KEY="<deployer_private_key>"
+export ORACLE_ADDRESS="<oracle_address>"
+
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url https://testnet-rpc.monad.xyz \
+  --broadcast \
+  --chain-id 10143
 ```
 
-### Anvil
+After deploying, clear the private key from the shell session:
 
-```shell
-$ anvil
+```bash
+unset PRIVATE_KEY
 ```
 
-### Deploy
+If your shell does not have `forge` on `PATH`, add Foundry first:
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+```bash
+export PATH="$HOME/.foundry/bin:$PATH"
 ```
