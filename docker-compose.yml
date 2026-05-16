@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: lexprotocol-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: lexprotocol
+      POSTGRES_PASSWORD: lexprotocol
+      POSTGRES_DB: lexprotocol
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexprotocol -d lexprotocol"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: lexprotocol-redis
+    ports:
+      - "6379:6379"
+    profiles:
+      - redis
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
