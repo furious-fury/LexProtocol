@@ -52,6 +52,37 @@ go test -tags=integration ./backend/internal/storage/...
 ### Run services (stubs)
 
 ```bash
-go run ./backend/cmd/pricing
 go run ./backend/cmd/indexer
+```
+
+### Pricing service
+
+The pricing service exposes informational prices and contract-compatible signed settlement payloads.
+
+Do not store signer private keys in `.env` files. Export them only in the terminal session that runs the service:
+
+```bash
+export PRICING_SIGNER_PRIVATE_KEY="<oracle_signer_private_key>"
+export ORACLE_REGISTRY_ADDRESS="<deployed_oracle_registry_address>"
+export CHAIN_ID="10143"
+export SIGNATURE_TTL_SECONDS="300"
+export PRICING_HTTP_ADDR=":8080"
+
+go run ./backend/cmd/pricing
+```
+
+Then call:
+
+```bash
+curl http://localhost:8080/healthz
+curl http://localhost:8080/price/1
+curl "http://localhost:8080/signed/1?outcome=YES"
+```
+
+`/price/:marketId` is informational only. `/signed/:marketId?outcome=YES|NO` returns `oracleData` and `signature` compatible with `MarketContract.submitOutcome`.
+
+Clear the signer key when you are done:
+
+```bash
+unset PRICING_SIGNER_PRIVATE_KEY
 ```
