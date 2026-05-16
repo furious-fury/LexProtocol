@@ -10,8 +10,6 @@ EVM-based prediction market protocol with deterministic rule-based oracle resolu
 
 See [docs/lexprotocol_prd.md](docs/lexprotocol_prd.md) and [docs/lexprotocol_build_plan.md](docs/lexprotocol_build_plan.md).
 
-Track progress in [tasklist.md](tasklist.md).
-
 ## Phase 0 — Dev setup
 
 ### Prerequisites
