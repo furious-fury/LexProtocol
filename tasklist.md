@@ -162,10 +162,12 @@ Track implementation progress. Check items off as you complete them (`- [x]`).
 
 ## Phase 4: End-to-End Integration
 
-- [ ] Connect MarketContract to indexer
-- [ ] Feed pricing data to frontend via API
-- [ ] Verify oracle submission flow (off-chain sign → on-chain resolve)
-- [ ] Test lifecycle: CREATED → OPEN → LOCKED → RESOLVED → FINALIZED
+- [x] Connect MarketContract events to indexer
+- [x] Keep frontend out of Phase 4; pricing remains API-only
+- [x] Verify oracle submission flow tooling (off-chain sign → on-chain resolve)
+- [x] Add terminal E2E lifecycle command: create → trade → lock → resolve → redeem
+- [x] Document local Anvil/Postgres/pricing/indexer/E2E workflow
+- [x] Test lifecycle: CREATED → OPEN → LOCKED → RESOLVED → FINALIZED
 
 ---
 

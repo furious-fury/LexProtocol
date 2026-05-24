@@ -103,3 +103,63 @@ Clear the signer key when you are done:
 ```bash
 unset PRICING_SIGNER_PRIVATE_KEY
 ```
+
+### Local end-to-end flow
+
+Phase 4 is terminal-first and does not require a frontend. Run Postgres, Anvil, deploy contracts, start the pricing service and indexer, then execute the lifecycle command.
+
+```bash
+# Terminal 1
+anvil
+```
+
+```bash
+# Terminal 2
+docker compose up -d postgres
+```
+
+Deploy contracts and copy the returned `OracleRegistry` and `MarketFactory` addresses:
+
+```bash
+cd contracts
+export PRIVATE_KEY="<deployer_private_key>"
+export ORACLE_ADDRESS="<oracle_signer_address>"
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url http://127.0.0.1:8545 \
+  --broadcast
+cd ..
+```
+
+Start pricing:
+
+```bash
+export PRICING_SIGNER_PRIVATE_KEY="<oracle_signer_private_key>"
+export ORACLE_REGISTRY_ADDRESS="<deployed_oracle_registry_address>"
+export CHAIN_ID="31337"
+go run ./backend/cmd/pricing
+```
+
+Start indexer:
+
+```bash
+export DATABASE_URL="postgres://lexprotocol:lexprotocol@localhost:5432/lexprotocol?sslmode=disable"
+export RPC_WS_URL="ws://127.0.0.1:8545"
+export RPC_HTTP_URL="http://127.0.0.1:8545"
+export MARKET_FACTORY_ADDRESS="<deployed_market_factory_address>"
+export START_BLOCK="0"
+export INDEXER_CONFIRMATIONS="2"
+go run ./backend/cmd/indexer
+```
+
+Run the E2E lifecycle:
+
+```bash
+export RPC_HTTP_URL="http://127.0.0.1:8545"
+export MARKET_FACTORY_ADDRESS="<deployed_market_factory_address>"
+export E2E_DEPLOYER_PRIVATE_KEY="<factory_owner_private_key>"
+export E2E_YES_TRADER_PRIVATE_KEY="<funded_yes_trader_private_key>"
+export E2E_NO_TRADER_PRIVATE_KEY="<funded_no_trader_private_key>"
+go run ./backend/cmd/e2e
+```
+
+The command creates a market, buys YES/NO, locks, fetches a signed YES outcome from pricing, resolves on-chain, redeems the winning YES position, and prints transaction hashes for indexer verification.
