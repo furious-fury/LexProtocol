@@ -40,7 +40,7 @@ contract MarketFactory is Ownable {
     function createMarket(
         string calldata resolutionRule,
         uint256 lockTime
-    ) external returns (address market) {
+    ) external onlyOwner returns (address market) {
         if (lockTime <= block.timestamp) revert InvalidLockTime();
 
         uint256 marketId = nextMarketId++;

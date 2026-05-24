@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Constants} from "../lib/Constants.sol";
 import {MarketContract} from "../src/MarketContract.sol";
 import {MarketFactory} from "../src/MarketFactory.sol";
@@ -310,5 +311,22 @@ contract MarketTest is Test {
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", oracleRegistry.domainSeparator(), structHash));
+    }
+
+    // ── Access control tests ──────────────────────────────────────────────
+
+    function testNonOwnerCannotCreateMarket() public {
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice)
+        );
+        factory.createMarket("Unauthorized market", block.timestamp + 1 days);
+    }
+
+    function testOwnerCanCreateMarket() public {
+        // address(this) is the owner set in setUp
+        address market = factory.createMarket("Owner-created market", block.timestamp + 1 days);
+        assertTrue(market != address(0));
+        assertTrue(factory.isMarket(market));
     }
 }
