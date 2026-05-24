@@ -3,8 +3,10 @@ package indexer
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -14,24 +16,30 @@ import (
 )
 
 type Service struct {
-	cfg         Config
-	store       *Store
-	broadcaster *Broadcaster
-	httpClient  *ethclient.Client
-	wsClient    *ethclient.Client
+	cfg          Config
+	store        *Store
+	broadcaster  *Broadcaster
+	httpClient   *ethclient.Client
+	wsClient     *ethclient.Client
+	knownMu      sync.RWMutex
+	knownMarkets map[common.Address]bool
 }
 
 func NewService(cfg Config, db *sql.DB, broadcaster *Broadcaster, httpClient *ethclient.Client, wsClient *ethclient.Client) *Service {
 	return &Service{
-		cfg:         cfg,
-		store:       NewStore(db),
-		broadcaster: broadcaster,
-		httpClient:  httpClient,
-		wsClient:    wsClient,
+		cfg:          cfg,
+		store:        NewStore(db),
+		broadcaster:  broadcaster,
+		httpClient:   httpClient,
+		wsClient:     wsClient,
+		knownMarkets: make(map[common.Address]bool),
 	}
 }
 
 func (s *Service) Run(ctx context.Context) error {
+	if err := s.loadKnownMarkets(ctx); err != nil {
+		return err
+	}
 	if err := s.backfill(ctx); err != nil {
 		return err
 	}
@@ -49,19 +57,35 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 func (s *Service) backfill(ctx context.Context) error {
-	query := ethereum.FilterQuery{
-		FromBlock: bigBlock(s.cfg.StartBlock),
-		Topics:    [][]common.Hash{EventTopics()},
+	latest, err := s.httpClient.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("load latest header for backfill: %w", err)
 	}
 
-	logs, err := s.httpClient.FilterLogs(ctx, query)
-	if err != nil {
-		return fmt.Errorf("backfill logs: %w", err)
-	}
-	for _, logEvent := range logs {
-		if err := s.handleLog(ctx, logEvent); err != nil {
-			log.Printf("indexer: skip backfill log %s/%d: %v", logEvent.TxHash.Hex(), logEvent.Index, err)
+	for from := s.cfg.StartBlock; from <= latest.Number.Uint64(); {
+		to := from + s.cfg.BackfillChunkSize - 1
+		if to > latest.Number.Uint64() {
+			to = latest.Number.Uint64()
 		}
+		query := ethereum.FilterQuery{
+			FromBlock: bigBlock(from),
+			ToBlock:   bigBlock(to),
+			Topics:    [][]common.Hash{EventTopics()},
+		}
+
+		logs, err := s.httpClient.FilterLogs(ctx, query)
+		if err != nil {
+			return fmt.Errorf("backfill logs %d-%d: %w", from, to, err)
+		}
+		for _, logEvent := range logs {
+			if err := s.handleLog(ctx, logEvent); err != nil {
+				log.Printf("indexer: skip backfill log %s/%d: %v", logEvent.TxHash.Hex(), logEvent.Index, err)
+			}
+		}
+		if to == latest.Number.Uint64() {
+			break
+		}
+		from = to + 1
 	}
 	return nil
 }
@@ -98,7 +122,7 @@ func (s *Service) handleLog(ctx context.Context, logEvent types.Log) error {
 		return s.store.RollbackFromBlock(ctx, logEvent.BlockNumber)
 	}
 
-	decoded, err := DecodeLog(logEvent, s.cfg.MarketFactoryAddress)
+	decoded, err := DecodeTrustedLog(logEvent, s.cfg.MarketFactoryAddress, s.isKnownMarket)
 	if err != nil {
 		return err
 	}
@@ -117,7 +141,7 @@ func (s *Service) handleLog(ctx context.Context, logEvent types.Log) error {
 		return err
 	}
 
-	return s.store.InsertPendingEvent(ctx, PendingEvent{
+	if err := s.store.InsertPendingEvent(ctx, PendingEvent{
 		EventType:   decoded.Type,
 		Address:     logEvent.Address.Hex(),
 		BlockNumber: logEvent.BlockNumber,
@@ -125,7 +149,19 @@ func (s *Service) handleLog(ctx context.Context, logEvent types.Log) error {
 		TxHash:      logEvent.TxHash.Hex(),
 		LogIndex:    logEvent.Index,
 		Payload:     decoded.Payload,
-	})
+	}); err != nil {
+		return err
+	}
+	if decoded.Type == EventMarketCreated {
+		var payload MarketCreatedPayload
+		if err := json.Unmarshal(decoded.Payload, &payload); err != nil {
+			return err
+		}
+		if common.IsHexAddress(payload.Market) {
+			s.rememberMarket(common.HexToAddress(payload.Market))
+		}
+	}
+	return nil
 }
 
 func (s *Service) confirmLoop(ctx context.Context) error {
@@ -142,6 +178,31 @@ func (s *Service) confirmLoop(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (s *Service) loadKnownMarkets(ctx context.Context) error {
+	markets, err := s.store.KnownMarkets(ctx)
+	if err != nil {
+		return fmt.Errorf("load known markets: %w", err)
+	}
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	for market := range markets {
+		s.knownMarkets[market] = true
+	}
+	return nil
+}
+
+func (s *Service) isKnownMarket(market common.Address) bool {
+	s.knownMu.RLock()
+	defer s.knownMu.RUnlock()
+	return s.knownMarkets[market]
+}
+
+func (s *Service) rememberMarket(market common.Address) {
+	s.knownMu.Lock()
+	defer s.knownMu.Unlock()
+	s.knownMarkets[market] = true
 }
 
 func (s *Service) confirm(ctx context.Context) error {

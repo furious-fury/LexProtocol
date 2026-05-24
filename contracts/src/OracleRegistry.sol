@@ -4,8 +4,9 @@ pragma solidity ^0.8.24;
 import {Constants} from "../lib/Constants.sol";
 import {IOracle} from "../interfaces/IOracle.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-contract OracleRegistry is Ownable, IOracle {
+contract OracleRegistry is Ownable2Step, IOracle {
     struct OracleSubmission {
         uint256 marketId;
         uint8 outcome;
@@ -35,13 +36,17 @@ contract OracleRegistry is Ownable, IOracle {
     error InvalidSignatureLength();
     error InvalidSignatureS();
     error InvalidSignatureV();
+    error ZeroAddress();
+    error InvalidNonce();
 
     constructor(address initialOwner, address initialOracle) Ownable(initialOwner) {
+        if (initialOwner == address(0) || initialOracle == address(0)) revert ZeroAddress();
         authorizedOracle = initialOracle;
         emit AuthorizedOracleUpdated(initialOracle);
     }
 
     function setAuthorizedOracle(address oracle) external onlyOwner {
+        if (oracle == address(0)) revert ZeroAddress();
         authorizedOracle = oracle;
         emit AuthorizedOracleUpdated(oracle);
     }
@@ -64,18 +69,17 @@ contract OracleRegistry is Ownable, IOracle {
         }
     }
 
-    function validateSubmission(
-        uint256 expectedMarketId,
-        bytes calldata oracleData,
-        bytes calldata signature
-    ) external returns (uint8 outcome, uint256 nonce, uint256 expiry) {
+    function validateSubmission(uint256 expectedMarketId, bytes calldata oracleData, bytes calldata signature)
+        external
+        returns (uint8 outcome, uint256 nonce, uint256 expiry)
+    {
         OracleSubmission memory submission = abi.decode(oracleData, (OracleSubmission));
         if (submission.marketId != expectedMarketId) revert InvalidMarket();
-        if (
-            submission.outcome != Constants.OUTCOME_YES &&
-            submission.outcome != Constants.OUTCOME_NO
-        ) revert InvalidOutcome();
+        if (submission.outcome != Constants.OUTCOME_YES && submission.outcome != Constants.OUTCOME_NO) {
+            revert InvalidOutcome();
+        }
         if (block.timestamp > submission.expiry) revert ExpiredSubmission();
+        if (submission.nonce == 0) revert InvalidNonce();
         if (usedNonces[submission.nonce]) revert NonceAlreadyUsed();
 
         bytes32 structHash = _submissionHash(submission);

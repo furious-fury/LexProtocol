@@ -10,6 +10,8 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	t.Setenv("ORACLE_REGISTRY_ADDRESS", "0x000000000000000000000000000000000000dEaD")
 	t.Setenv("PRICING_SIGNER_PRIVATE_KEY", testPrivateKey)
 	t.Setenv("SIGNATURE_TTL_SECONDS", "600")
+	t.Setenv("DATABASE_URL", "postgres://lexprotocol:lexprotocol@localhost:5432/lexprotocol?sslmode=disable")
+	t.Setenv("PRICING_API_TOKEN", "secret-token")
 
 	cfg, err := LoadConfigFromEnv()
 	if err != nil {
@@ -24,6 +26,9 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	}
 	if cfg.SignatureTTL.Seconds() != 600 {
 		t.Fatalf("SignatureTTL = %s", cfg.SignatureTTL)
+	}
+	if cfg.DatabaseURL == "" || cfg.APIToken != "secret-token" {
+		t.Fatalf("security config not loaded: %+v", cfg)
 	}
 }
 

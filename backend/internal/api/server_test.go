@@ -67,7 +67,36 @@ func TestSignedAPIRejectsInvalidOutcome(t *testing.T) {
 	}
 }
 
+func TestSignedAPIRequiresTokenWhenConfigured(t *testing.T) {
+	handler := newTestHandlerWithToken(t, "secret-token")
+
+	req := httptest.NewRequest(http.MethodGet, "/signed/1?outcome=YES", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSignedAPIAcceptsConfiguredToken(t *testing.T) {
+	handler := newTestHandlerWithToken(t, "secret-token")
+
+	req := httptest.NewRequest(http.MethodGet, "/signed/1?outcome=YES", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func newTestHandler(t *testing.T) http.Handler {
+	return newTestHandlerWithToken(t, "")
+}
+
+func newTestHandlerWithToken(t *testing.T, token string) http.Handler {
 	t.Helper()
 
 	cfg := pricing.Config{
@@ -86,7 +115,7 @@ func newTestHandler(t *testing.T) http.Handler {
 		pricing.NewMemoryNonceStore(nil),
 		signer,
 	)
-	return NewServer(service)
+	return NewServer(service, WithSignedAPIToken(token))
 }
 
 const pricingTestPrivateKey = "0x59c6995e998f97a5a0044966f0945389dc9e86dae547d3e236020d123b4d7bc5"

@@ -19,6 +19,7 @@ const (
 	EventMarketLocked    = "MARKET_LOCKED"
 	EventOracleSubmitted = "ORACLE_SUBMITTED"
 	EventMarketResolved  = "MARKET_RESOLVED"
+	EventMarketFinalized = "MARKET_FINALIZED"
 	EventRedeemed        = "REDEEMED"
 )
 
@@ -28,6 +29,7 @@ var (
 	topicMarketLocked    = crypto.Keccak256Hash([]byte("MarketLocked(uint256,uint256)"))
 	topicOracleSubmitted = crypto.Keccak256Hash([]byte("OracleSubmitted(uint256,uint8,uint256,uint256)"))
 	topicMarketResolved  = crypto.Keccak256Hash([]byte("MarketResolved(uint256,uint8)"))
+	topicMarketFinalized = crypto.Keccak256Hash([]byte("MarketFinalized(uint256)"))
 	topicRedeemed        = crypto.Keccak256Hash([]byte("Redeemed(uint256,address,uint256)"))
 
 	uintArg           = abi.Arguments{{Type: mustABIType("uint256")}}
@@ -71,6 +73,10 @@ type MarketResolvedPayload struct {
 	Outcome  string `json:"outcome"`
 }
 
+type MarketFinalizedPayload struct {
+	MarketID string `json:"marketId"`
+}
+
 type RedeemedPayload struct {
 	MarketID string `json:"marketId"`
 	User     string `json:"user"`
@@ -84,6 +90,7 @@ func EventTopics() []common.Hash {
 		topicMarketLocked,
 		topicOracleSubmitted,
 		topicMarketResolved,
+		topicMarketFinalized,
 		topicRedeemed,
 	}
 }
@@ -107,11 +114,23 @@ func DecodeLog(log types.Log, factory common.Address) (DecodedEvent, error) {
 		return decodeOracleSubmitted(log)
 	case topicMarketResolved:
 		return decodeMarketResolved(log)
+	case topicMarketFinalized:
+		return decodeMarketFinalized(log)
 	case topicRedeemed:
 		return decodeRedeemed(log)
 	default:
 		return DecodedEvent{}, fmt.Errorf("unknown event topic %s", log.Topics[0].Hex())
 	}
+}
+
+func DecodeTrustedLog(log types.Log, factory common.Address, isKnownMarket func(common.Address) bool) (DecodedEvent, error) {
+	if len(log.Topics) == 0 {
+		return DecodedEvent{}, errors.New("log has no topics")
+	}
+	if log.Topics[0] != topicMarketCreated && !isKnownMarket(log.Address) {
+		return DecodedEvent{}, fmt.Errorf("market event emitted by unknown market %s", log.Address.Hex())
+	}
+	return DecodeLog(log, factory)
 }
 
 func decodeMarketCreated(log types.Log) (DecodedEvent, error) {
@@ -186,6 +205,15 @@ func decodeMarketResolved(log types.Log) (DecodedEvent, error) {
 	return event(EventMarketResolved, MarketResolvedPayload{
 		MarketID: topicBig(log.Topics[1]).String(),
 		Outcome:  outcomeString(uint8(topicBig(log.Topics[2]).Uint64())),
+	})
+}
+
+func decodeMarketFinalized(log types.Log) (DecodedEvent, error) {
+	if len(log.Topics) != 2 {
+		return DecodedEvent{}, errors.New("invalid MarketFinalized topic count")
+	}
+	return event(EventMarketFinalized, MarketFinalizedPayload{
+		MarketID: topicBig(log.Topics[1]).String(),
 	})
 }
 

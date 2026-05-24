@@ -6,13 +6,16 @@ import {PositionToken} from "./PositionToken.sol";
 import {ResolutionEngine} from "./ResolutionEngine.sol";
 import {Vault} from "./Vault.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-contract MarketFactory is Ownable {
+contract MarketFactory is Ownable2Step {
     PositionToken public immutable POSITION_TOKEN;
     Vault public immutable VAULT;
     ResolutionEngine public immutable RESOLUTION_ENGINE;
 
     uint256 public nextMarketId = 1;
+    uint256 public maxPositionPerUser;
+    uint256 public maxTotalMarketExposure;
     mapping(uint256 => address) public markets;
     mapping(address => bool) public isMarket;
 
@@ -23,24 +26,35 @@ contract MarketFactory is Ownable {
         uint256 lockTime,
         string resolutionRule
     );
+    event MarketLimitsUpdated(uint256 maxPositionPerUser, uint256 maxTotalMarketExposure);
 
+    error ZeroAddress();
     error InvalidLockTime();
 
-    constructor(
-        address initialOwner,
-        address positionToken_,
-        address vault_,
-        address resolutionEngine_
-    ) Ownable(initialOwner) {
+    constructor(address initialOwner, address positionToken_, address vault_, address resolutionEngine_)
+        Ownable(initialOwner)
+    {
+        if (
+            initialOwner == address(0) || positionToken_ == address(0) || vault_ == address(0)
+                || resolutionEngine_ == address(0)
+        ) revert ZeroAddress();
+
         POSITION_TOKEN = PositionToken(positionToken_);
         VAULT = Vault(payable(vault_));
         RESOLUTION_ENGINE = ResolutionEngine(resolutionEngine_);
     }
 
-    function createMarket(
-        string calldata resolutionRule,
-        uint256 lockTime
-    ) external onlyOwner returns (address market) {
+    function setMarketLimits(uint256 maxPositionPerUser_, uint256 maxTotalMarketExposure_) external onlyOwner {
+        maxPositionPerUser = maxPositionPerUser_;
+        maxTotalMarketExposure = maxTotalMarketExposure_;
+        emit MarketLimitsUpdated(maxPositionPerUser_, maxTotalMarketExposure_);
+    }
+
+    function createMarket(string calldata resolutionRule, uint256 lockTime)
+        external
+        onlyOwner
+        returns (address market)
+    {
         if (lockTime <= block.timestamp) revert InvalidLockTime();
 
         uint256 marketId = nextMarketId++;
@@ -52,7 +66,9 @@ contract MarketFactory is Ownable {
                 lockTime,
                 address(POSITION_TOKEN),
                 address(VAULT),
-                address(RESOLUTION_ENGINE)
+                address(RESOLUTION_ENGINE),
+                maxPositionPerUser,
+                maxTotalMarketExposure
             )
         );
 

@@ -29,12 +29,7 @@ contract MarketTest is Test {
         vault = new Vault(address(this));
         oracleRegistry = new OracleRegistry(address(this), oracle);
         resolutionEngine = new ResolutionEngine(address(this), address(oracleRegistry));
-        factory = new MarketFactory(
-            address(this),
-            address(positionToken),
-            address(vault),
-            address(resolutionEngine)
-        );
+        factory = new MarketFactory(address(this), address(positionToken), address(vault), address(resolutionEngine));
 
         positionToken.setFactory(address(factory));
         vault.setFactory(address(factory));
@@ -98,6 +93,7 @@ contract MarketTest is Test {
         uint256 yesId = positionToken.tokenId(market.marketId(), Constants.OUTCOME_YES);
         assertEq(positionToken.balanceOf(alice, yesId), 0);
         assertEq(alice.balance, aliceBefore + 1 ether);
+        assertEq(market.getState(), Constants.STATUS_FINALIZED);
 
         vm.prank(bob);
         vm.expectRevert();
@@ -115,10 +111,7 @@ contract MarketTest is Test {
 
         bytes memory oracleData = abi.encode(
             OracleRegistry.OracleSubmission({
-                marketId: market.marketId(),
-                outcome: Constants.OUTCOME_YES,
-                nonce: 1,
-                expiry: block.timestamp + 1 days
+                marketId: market.marketId(), outcome: Constants.OUTCOME_YES, nonce: 1, expiry: block.timestamp + 1 days
             })
         );
         bytes32 digest = _submissionDigest(market.marketId(), Constants.OUTCOME_YES, 1, block.timestamp + 1 days);
@@ -176,6 +169,8 @@ contract MarketTest is Test {
 
         vm.expectRevert();
         vault.withdraw(1 ether);
+        assertEq(vault.reservedBalance(), 1 ether);
+        assertEq(vault.availableBalance(), 0);
     }
 
     function testExpiredOracleSubmissionFails() public {
@@ -276,40 +271,26 @@ contract MarketTest is Test {
         market.submitOutcome(oracleData, signature);
     }
 
-    function _signedSubmission(
-        uint256 marketId,
-        uint8 outcome,
-        uint256 nonce,
-        uint256 expiry
-    ) private view returns (bytes memory oracleData, bytes memory signature) {
+    function _signedSubmission(uint256 marketId, uint8 outcome, uint256 nonce, uint256 expiry)
+        private
+        view
+        returns (bytes memory oracleData, bytes memory signature)
+    {
         oracleData = abi.encode(
-            OracleRegistry.OracleSubmission({
-                marketId: marketId,
-                outcome: outcome,
-                nonce: nonce,
-                expiry: expiry
-            })
+            OracleRegistry.OracleSubmission({marketId: marketId, outcome: outcome, nonce: nonce, expiry: expiry})
         );
         bytes32 digest = _submissionDigest(marketId, outcome, nonce, expiry);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleKey, digest);
         signature = abi.encodePacked(r, s, v);
     }
 
-    function _submissionDigest(
-        uint256 marketId,
-        uint8 outcome,
-        uint256 nonce,
-        uint256 expiry
-    ) private view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                oracleRegistry.ORACLE_SUBMISSION_TYPEHASH(),
-                marketId,
-                outcome,
-                nonce,
-                expiry
-            )
-        );
+    function _submissionDigest(uint256 marketId, uint8 outcome, uint256 nonce, uint256 expiry)
+        private
+        view
+        returns (bytes32)
+    {
+        bytes32 structHash =
+            keccak256(abi.encode(oracleRegistry.ORACLE_SUBMISSION_TYPEHASH(), marketId, outcome, nonce, expiry));
         return keccak256(abi.encodePacked("\x19\x01", oracleRegistry.domainSeparator(), structHash));
     }
 
@@ -317,9 +298,7 @@ contract MarketTest is Test {
 
     function testNonOwnerCannotCreateMarket() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         factory.createMarket("Unauthorized market", block.timestamp + 1 days);
     }
 
@@ -328,5 +307,59 @@ contract MarketTest is Test {
         address market = factory.createMarket("Owner-created market", block.timestamp + 1 days);
         assertTrue(market != address(0));
         assertTrue(factory.isMarket(market));
+    }
+
+    function testPerUserPositionLimit() public {
+        factory.setMarketLimits(1 ether, 0);
+        MarketContract market = _createMarket();
+
+        vm.prank(alice);
+        market.buyYes{value: 0.6 ether}();
+
+        vm.prank(alice);
+        vm.expectRevert(MarketContract.ExceedsPositionLimit.selector);
+        market.buyYes{value: 0.5 ether}();
+    }
+
+    function testMarketExposureLimit() public {
+        factory.setMarketLimits(0, 1 ether);
+        MarketContract market = _createMarket();
+
+        vm.prank(alice);
+        market.buyYes{value: 0.7 ether}();
+
+        vm.prank(bob);
+        vm.expectRevert(MarketContract.ExceedsMarketLimit.selector);
+        market.buyNo{value: 0.4 ether}();
+    }
+
+    function testZeroAddressAdminUpdatesFail() public {
+        vm.expectRevert();
+        positionToken.setFactory(address(0));
+
+        vm.expectRevert();
+        vault.setFactory(address(0));
+
+        vm.expectRevert();
+        resolutionEngine.setFactory(address(0));
+
+        vm.expectRevert();
+        oracleRegistry.setAuthorizedOracle(address(0));
+    }
+
+    function testOracleZeroNonceFails() public {
+        MarketContract market = _createMarket();
+
+        vm.prank(alice);
+        market.buyYes{value: 1 ether}();
+
+        vm.warp(market.lockTime());
+        market.lockMarket();
+
+        (bytes memory oracleData, bytes memory signature) =
+            _signedSubmission(market.marketId(), Constants.OUTCOME_YES, 0, block.timestamp + 1 days);
+
+        vm.expectRevert(OracleRegistry.InvalidNonce.selector);
+        market.submitOutcome(oracleData, signature);
     }
 }

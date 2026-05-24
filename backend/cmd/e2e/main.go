@@ -39,6 +39,7 @@ var (
 type config struct {
 	RPCURL               string
 	PricingURL           string
+	PricingAPIToken      string
 	IndexerURL           string
 	MarketFactoryAddress common.Address
 	DeployerKey          *ecdsa.PrivateKey
@@ -119,7 +120,7 @@ func main() {
 	waitMined(ctx, client, lockTx)
 	log.Printf("locked market tx=%s", lockTx.Hash().Hex())
 
-	submission, err := signedOutcome(ctx, cfg.PricingURL, marketID.String(), "YES")
+	submission, err := signedOutcome(ctx, cfg.PricingURL, cfg.PricingAPIToken, marketID.String(), "YES")
 	if err != nil {
 		log.Fatalf("get signed outcome: %v", err)
 	}
@@ -187,6 +188,7 @@ func loadConfig() (config, error) {
 	return config{
 		RPCURL:               rpcURL,
 		PricingURL:           strings.TrimRight(firstNonEmpty(os.Getenv("PRICING_URL"), defaultPricingURL), "/"),
+		PricingAPIToken:      strings.TrimSpace(os.Getenv("PRICING_API_TOKEN")),
 		IndexerURL:           strings.TrimRight(firstNonEmpty(os.Getenv("INDEXER_URL"), defaultIndexerURL), "/"),
 		MarketFactoryAddress: common.HexToAddress(factory),
 		DeployerKey:          deployerKey,
@@ -252,11 +254,14 @@ func parseMarketCreated(receipt *types.Receipt) (*big.Int, common.Address, error
 	return nil, common.Address{}, errors.New("MarketCreated not found in receipt")
 }
 
-func signedOutcome(ctx context.Context, baseURL string, marketID string, outcome string) (pricing.SettlementSubmission, error) {
+func signedOutcome(ctx context.Context, baseURL string, apiToken string, marketID string, outcome string) (pricing.SettlementSubmission, error) {
 	url := fmt.Sprintf("%s/signed/%s?outcome=%s", baseURL, marketID, outcome)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return pricing.SettlementSubmission{}, err
+	}
+	if apiToken != "" {
+		req.Header.Set("Authorization", "Bearer "+apiToken)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

@@ -51,6 +51,28 @@ func (s *Store) InsertPendingEvent(ctx context.Context, event PendingEvent) erro
 	return err
 }
 
+func (s *Store) KnownMarkets(ctx context.Context) (map[common.Address]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT market_address FROM markets
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	known := make(map[common.Address]bool)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if common.IsHexAddress(raw) {
+			known[common.HexToAddress(raw)] = true
+		}
+	}
+	return known, rows.Err()
+}
+
 func (s *Store) ConfirmableEvents(ctx context.Context, maxBlock uint64) ([]PendingEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, event_type, address, block_number, block_hash, tx_hash, log_index, payload
@@ -221,6 +243,13 @@ func writeNormalized(ctx context.Context, tx *sql.Tx, event PendingEvent) error 
 			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (tx_hash, log_index) DO NOTHING
 		`, payload.MarketID, payload.User, payload.Amount, event.TxHash, int64(event.LogIndex), int64(event.BlockNumber))
+		return err
+	case EventMarketFinalized:
+		var payload MarketFinalizedPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE markets SET status = 'FINALIZED' WHERE market_id = $1`, payload.MarketID)
 		return err
 	default:
 		return fmt.Errorf("unsupported event type %s", event.EventType)

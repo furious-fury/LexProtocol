@@ -4,8 +4,10 @@ pragma solidity ^0.8.24;
 import {Constants} from "../lib/Constants.sol";
 import {IVault} from "../interfaces/IVault.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract Vault is Ownable, IVault {
+contract Vault is Ownable2Step, ReentrancyGuard, IVault {
     struct MarketExposure {
         uint256 yesCollateral;
         uint256 noCollateral;
@@ -33,8 +35,12 @@ contract Vault is Ownable, IVault {
     error MarketNotSettled();
     error InsufficientAvailableBalance();
     error TransferFailed();
+    error ZeroAddress();
+    error InvalidAmount();
 
-    constructor(address initialOwner) Ownable(initialOwner) {}
+    constructor(address initialOwner) Ownable(initialOwner) {
+        if (initialOwner == address(0)) revert ZeroAddress();
+    }
 
     modifier onlyOwnerOrFactory() {
         _onlyOwnerOrFactory();
@@ -51,28 +57,33 @@ contract Vault is Ownable, IVault {
     }
 
     function setFactory(address factory_) external onlyOwner {
+        if (factory_ == address(0)) revert ZeroAddress();
         factory = factory_;
         emit FactoryUpdated(factory_);
     }
 
     function authorizeMarket(address market, bool authorized) external onlyOwnerOrFactory {
+        if (market == address(0)) revert ZeroAddress();
         authorizedMarkets[market] = authorized;
         emit MarketAuthorizationUpdated(market, authorized);
     }
 
     function deposit() external payable {
+        if (msg.value == 0) revert InvalidAmount();
         emit Deposited(msg.sender, msg.value);
     }
 
-    function withdraw(uint256 amount) external onlyOwner {
+    function withdraw(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert InvalidAmount();
         if (address(this).balance - reservedCollateral < amount) revert InsufficientAvailableBalance();
         address currentOwner = owner();
-        (bool ok, ) = payable(currentOwner).call{value: amount}("");
+        (bool ok,) = payable(currentOwner).call{value: amount}("");
         if (!ok) revert TransferFailed();
         emit Withdrawn(currentOwner, amount);
     }
 
     function coverExposure(uint256 marketId, uint8 side) external payable onlyMarket {
+        if (msg.value == 0) revert InvalidAmount();
         if (side != Constants.OUTCOME_YES && side != Constants.OUTCOME_NO) revert InvalidOutcome();
         MarketExposure storage exposure = exposures[marketId];
         if (exposure.settled) revert MarketAlreadySettled();
@@ -102,18 +113,28 @@ contract Vault is Ownable, IVault {
         emit ExposureSettled(marketId, outcome);
     }
 
-    function redeemPayout(uint256 marketId, address payable user, uint256 amount) external onlyMarket {
+    function redeemPayout(uint256 marketId, address payable user, uint256 amount) external onlyMarket nonReentrant {
+        if (user == address(0)) revert ZeroAddress();
+        if (amount == 0) revert InvalidAmount();
         MarketExposure storage exposure = exposures[marketId];
         if (!exposure.settled) revert MarketNotSettled();
         reservedCollateral -= amount;
 
-        (bool ok, ) = user.call{value: amount}("");
+        (bool ok,) = user.call{value: amount}("");
         if (!ok) revert TransferFailed();
         emit PayoutRedeemed(marketId, user, amount);
     }
 
     function getBalance() external view returns (uint256) {
         return address(this).balance;
+    }
+
+    function availableBalance() external view returns (uint256) {
+        return address(this).balance - reservedCollateral;
+    }
+
+    function reservedBalance() external view returns (uint256) {
+        return reservedCollateral;
     }
 
     function _onlyOwnerOrFactory() internal view {

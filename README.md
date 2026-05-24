@@ -58,6 +58,7 @@ export RPC_HTTP_URL="http://127.0.0.1:8545"
 export MARKET_FACTORY_ADDRESS="<deployed_market_factory_address>"
 export START_BLOCK="0"
 export INDEXER_CONFIRMATIONS="2"
+export INDEXER_BACKFILL_CHUNK_SIZE="2000"
 export INDEXER_HTTP_ADDR=":8090"
 
 go run ./backend/cmd/indexer
@@ -71,6 +72,7 @@ curl -N http://localhost:8090/events
 ```
 
 The indexer stores pending logs, promotes confirmed logs to Postgres, writes normalized market/trade/oracle/settlement/redemption rows, and broadcasts confirmed events over SSE.
+It only accepts `MarketCreated` events from the configured factory and only accepts market lifecycle events from known factory-created markets.
 
 ### Pricing service
 
@@ -84,6 +86,8 @@ export ORACLE_REGISTRY_ADDRESS="<deployed_oracle_registry_address>"
 export CHAIN_ID="10143"
 export SIGNATURE_TTL_SECONDS="300"
 export PRICING_HTTP_ADDR=":8080"
+export DATABASE_URL="postgres://lexprotocol:lexprotocol@localhost:5432/lexprotocol?sslmode=disable"
+export PRICING_API_TOKEN="<strong_local_token>"
 
 go run ./backend/cmd/pricing
 ```
@@ -93,15 +97,17 @@ Then call:
 ```bash
 curl http://localhost:8080/healthz
 curl http://localhost:8080/price/1
-curl "http://localhost:8080/signed/1?outcome=YES"
+curl -H "Authorization: Bearer $PRICING_API_TOKEN" "http://localhost:8080/signed/1?outcome=YES"
 ```
 
 `/price/:marketId` is informational only. `/signed/:marketId?outcome=YES|NO` returns `oracleData` and `signature` compatible with `MarketContract.submitOutcome`.
+When `DATABASE_URL` is set, signed settlement nonces are persisted in Postgres so service restarts cannot reuse nonces. `PRICING_API_TOKEN` protects the signature endpoint; keep it unset only for isolated local development.
 
 Clear the signer key when you are done:
 
 ```bash
 unset PRICING_SIGNER_PRIVATE_KEY
+unset PRICING_API_TOKEN
 ```
 
 ### Local end-to-end flow
@@ -136,6 +142,8 @@ Start pricing:
 export PRICING_SIGNER_PRIVATE_KEY="<oracle_signer_private_key>"
 export ORACLE_REGISTRY_ADDRESS="<deployed_oracle_registry_address>"
 export CHAIN_ID="31337"
+export DATABASE_URL="postgres://lexprotocol:lexprotocol@localhost:5432/lexprotocol?sslmode=disable"
+export PRICING_API_TOKEN="<strong_local_token>"
 go run ./backend/cmd/pricing
 ```
 
@@ -148,6 +156,7 @@ export RPC_HTTP_URL="http://127.0.0.1:8545"
 export MARKET_FACTORY_ADDRESS="<deployed_market_factory_address>"
 export START_BLOCK="0"
 export INDEXER_CONFIRMATIONS="2"
+export INDEXER_BACKFILL_CHUNK_SIZE="2000"
 go run ./backend/cmd/indexer
 ```
 
@@ -163,3 +172,9 @@ go run ./backend/cmd/e2e
 ```
 
 The command creates a market, buys YES/NO, locks, fetches a signed YES outcome from pricing, resolves on-chain, redeems the winning YES position, and prints transaction hashes for indexer verification.
+
+## Security
+
+Phase 5 hardening adds reentrancy guards, zero-address validation, two-step ownership, configurable market exposure caps, market finalization events, persistent pricing nonces, protected signature generation, trusted indexer emitters, and chunked backfill.
+
+See [docs/security_model.md](docs/security_model.md) and [docs/phase5_security_hardening_plan.md](docs/phase5_security_hardening_plan.md).

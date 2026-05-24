@@ -9,12 +9,13 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	t.Setenv("MARKET_FACTORY_ADDRESS", "0x1000000000000000000000000000000000000001")
 	t.Setenv("START_BLOCK", "10")
 	t.Setenv("INDEXER_CONFIRMATIONS", "2")
+	t.Setenv("INDEXER_BACKFILL_CHUNK_SIZE", "500")
 
 	cfg, err := LoadConfigFromEnv()
 	if err != nil {
 		t.Fatalf("LoadConfigFromEnv() error = %v", err)
 	}
-	if cfg.StartBlock != 10 || cfg.Confirmations != 2 || cfg.HTTPAddr != defaultHTTPAddr {
+	if cfg.StartBlock != 10 || cfg.Confirmations != 2 || cfg.BackfillChunkSize != 500 || cfg.HTTPAddr != defaultHTTPAddr {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }

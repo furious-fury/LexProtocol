@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -11,11 +12,23 @@ import (
 )
 
 type Server struct {
-	pricing *pricing.Service
+	pricing  *pricing.Service
+	apiToken string
 }
 
-func NewServer(pricingService *pricing.Service) http.Handler {
+type Option func(*Server)
+
+func WithSignedAPIToken(token string) Option {
+	return func(server *Server) {
+		server.apiToken = strings.TrimSpace(token)
+	}
+}
+
+func NewServer(pricingService *pricing.Service, options ...Option) http.Handler {
 	server := &Server{pricing: pricingService}
+	for _, option := range options {
+		option(server)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.healthz)
 	mux.HandleFunc("GET /price/{marketId}", server.price)
@@ -42,6 +55,11 @@ func (s *Server) price(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) signed(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		writeError(w, http.StatusUnauthorized, errors.New("missing or invalid authorization token"))
+		return
+	}
+
 	marketID, ok := parseMarketID(w, r)
 	if !ok {
 		return
@@ -59,6 +77,19 @@ func (s *Server) signed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, submission)
+}
+
+func (s *Server) authorized(r *http.Request) bool {
+	if s.apiToken == "" {
+		return true
+	}
+	raw := strings.TrimSpace(r.Header.Get("Authorization"))
+	const prefix = "Bearer "
+	if !strings.HasPrefix(raw, prefix) {
+		return false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1
 }
 
 func parseMarketID(w http.ResponseWriter, r *http.Request) (*big.Int, bool) {

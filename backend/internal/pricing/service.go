@@ -24,5 +24,12 @@ func (s *Service) SignedSettlement(ctx context.Context, marketID *big.Int, outco
 	if err != nil {
 		return SettlementSubmission{}, err
 	}
-	return s.signer.SignSettlement(marketID, outcomeID, nonce)
+	submission, err := s.signer.SignSettlement(marketID, outcomeID, nonce)
+	if err != nil {
+		return SettlementSubmission{}, err
+	}
+	if err := s.nonces.Record(ctx, submission); err != nil {
+		return SettlementSubmission{}, err
+	}
+	return submission, nil
 }

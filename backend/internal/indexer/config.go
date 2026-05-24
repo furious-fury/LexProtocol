@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	defaultHTTPAddr      = ":8090"
-	defaultConfirmations = uint64(2)
+	defaultHTTPAddr          = ":8090"
+	defaultConfirmations     = uint64(2)
+	defaultBackfillChunkSize = uint64(2000)
 )
 
 type Config struct {
@@ -23,6 +24,7 @@ type Config struct {
 	MarketFactoryAddress common.Address
 	StartBlock           uint64
 	Confirmations        uint64
+	BackfillChunkSize    uint64
 	HTTPAddr             string
 }
 
@@ -61,6 +63,13 @@ func LoadConfigFromEnv() (Config, error) {
 	if confirmations == 0 {
 		return Config{}, errors.New("INDEXER_CONFIRMATIONS must be greater than zero")
 	}
+	backfillChunkSize, err := parseUintEnv("INDEXER_BACKFILL_CHUNK_SIZE", defaultBackfillChunkSize)
+	if err != nil {
+		return Config{}, err
+	}
+	if backfillChunkSize == 0 {
+		return Config{}, errors.New("INDEXER_BACKFILL_CHUNK_SIZE must be greater than zero")
+	}
 
 	httpAddr := strings.TrimSpace(os.Getenv("INDEXER_HTTP_ADDR"))
 	if httpAddr == "" {
@@ -74,6 +83,7 @@ func LoadConfigFromEnv() (Config, error) {
 		MarketFactoryAddress: common.HexToAddress(factoryRaw),
 		StartBlock:           startBlock,
 		Confirmations:        confirmations,
+		BackfillChunkSize:    backfillChunkSize,
 		HTTPAddr:             httpAddr,
 	}, nil
 }

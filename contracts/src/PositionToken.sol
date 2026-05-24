@@ -2,10 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import {Constants} from "../lib/Constants.sol";
 
-contract PositionToken is ERC1155, Ownable {
+contract PositionToken is ERC1155, Ownable2Step {
     mapping(address => bool) public authorizedMarkets;
 
     address public factory;
@@ -15,8 +16,11 @@ contract PositionToken is ERC1155, Ownable {
 
     error NotAuthorized();
     error InvalidOutcome();
+    error ZeroAddress();
 
-    constructor(string memory uri_, address initialOwner) ERC1155(uri_) Ownable(initialOwner) {}
+    constructor(string memory uri_, address initialOwner) ERC1155(uri_) Ownable(initialOwner) {
+        if (initialOwner == address(0)) revert ZeroAddress();
+    }
 
     modifier onlyOwnerOrFactory() {
         _onlyOwnerOrFactory();
@@ -29,6 +33,7 @@ contract PositionToken is ERC1155, Ownable {
     }
 
     function setFactory(address factory_) external onlyOwner {
+        if (factory_ == address(0)) revert ZeroAddress();
         factory = factory_;
         emit FactoryUpdated(factory_);
     }
@@ -38,6 +43,7 @@ contract PositionToken is ERC1155, Ownable {
     }
 
     function authorizeMarket(address market, bool authorized) external onlyOwnerOrFactory {
+        if (market == address(0)) revert ZeroAddress();
         authorizedMarkets[market] = authorized;
         emit MarketAuthorizationUpdated(market, authorized);
     }

@@ -90,6 +90,10 @@ func (s *Signer) SignSettlement(marketID *big.Int, outcomeID uint8, nonce *big.I
 	}, nil
 }
 
+func (s *Signer) Address() common.Address {
+	return s.signerAddress
+}
+
 func (s *Signer) Digest(marketID *big.Int, outcomeID uint8, nonce *big.Int, expiry *big.Int) common.Hash {
 	domain := s.DomainSeparator()
 	structHash := OracleSubmissionStructHash(marketID, outcomeID, nonce, expiry)

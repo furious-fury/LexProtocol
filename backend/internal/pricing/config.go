@@ -20,6 +20,8 @@ const (
 // Config contains runtime settings for the pricing service.
 type Config struct {
 	HTTPAddr              string
+	DatabaseURL           string
+	APIToken              string
 	ChainID               *big.Int
 	OracleRegistryAddress common.Address
 	SignerPrivateKeyHex   string
@@ -32,6 +34,8 @@ func LoadConfigFromEnv() (Config, error) {
 	if httpAddr == "" {
 		httpAddr = defaultHTTPAddr
 	}
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	apiToken := strings.TrimSpace(os.Getenv("PRICING_API_TOKEN"))
 
 	chainIDRaw := firstNonEmpty(os.Getenv("CHAIN_ID"), os.Getenv("MONAD_TESTNET_CHAIN_ID"))
 	if strings.TrimSpace(chainIDRaw) == "" {
@@ -66,6 +70,8 @@ func LoadConfigFromEnv() (Config, error) {
 
 	return Config{
 		HTTPAddr:              httpAddr,
+		DatabaseURL:           databaseURL,
+		APIToken:              apiToken,
 		ChainID:               chainID,
 		OracleRegistryAddress: common.HexToAddress(registryRaw),
 		SignerPrivateKeyHex:   privateKey,

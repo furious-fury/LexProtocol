@@ -8,4 +8,6 @@ interface IVault {
     function settleExposure(uint256 marketId, uint8 outcome) external;
     function redeemPayout(uint256 marketId, address payable user, uint256 amount) external;
     function getBalance() external view returns (uint256);
+    function availableBalance() external view returns (uint256);
+    function reservedBalance() external view returns (uint256);
 }

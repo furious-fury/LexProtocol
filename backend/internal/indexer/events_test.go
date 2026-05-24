@@ -56,6 +56,7 @@ func TestDecodeTradeExecuted(t *testing.T) {
 	user := common.HexToAddress("0x3000000000000000000000000000000000000003")
 
 	decoded, err := DecodeLog(types.Log{
+		Address: common.HexToAddress("0x2000000000000000000000000000000000000002"),
 		Topics: []common.Hash{
 			topicTradeExecuted,
 			common.BigToHash(big.NewInt(7)),
@@ -73,6 +74,79 @@ func TestDecodeTradeExecuted(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 	if payload.MarketID != "7" || payload.User != user.Hex() || payload.Side != "YES" || payload.Amount != "5000" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
+func TestDecodeTrustedLogRejectsUnknownMarketEmitter(t *testing.T) {
+	data, err := abi.Arguments{{Type: mustABIType("uint256")}}.Pack(big.NewInt(5_000))
+	if err != nil {
+		t.Fatalf("pack data: %v", err)
+	}
+
+	_, err = DecodeTrustedLog(types.Log{
+		Address: common.HexToAddress("0x9999999999999999999999999999999999999999"),
+		Topics: []common.Hash{
+			topicTradeExecuted,
+			common.BigToHash(big.NewInt(7)),
+			common.Hash{},
+			common.BigToHash(big.NewInt(1)),
+		},
+		Data: data,
+	}, common.Address{}, func(common.Address) bool {
+		return false
+	})
+	if err == nil {
+		t.Fatal("expected unknown market error")
+	}
+}
+
+func TestDecodeTrustedLogAcceptsKnownMarketEmitter(t *testing.T) {
+	data, err := abi.Arguments{{Type: mustABIType("uint256")}}.Pack(big.NewInt(5_000))
+	if err != nil {
+		t.Fatalf("pack data: %v", err)
+	}
+	market := common.HexToAddress("0x2000000000000000000000000000000000000002")
+
+	decoded, err := DecodeTrustedLog(types.Log{
+		Address: market,
+		Topics: []common.Hash{
+			topicTradeExecuted,
+			common.BigToHash(big.NewInt(7)),
+			common.Hash{},
+			common.BigToHash(big.NewInt(1)),
+		},
+		Data: data,
+	}, common.Address{}, func(addr common.Address) bool {
+		return addr == market
+	})
+	if err != nil {
+		t.Fatalf("DecodeTrustedLog() error = %v", err)
+	}
+	if decoded.Type != EventTradeExecuted {
+		t.Fatalf("event type = %s", decoded.Type)
+	}
+}
+
+func TestDecodeMarketFinalized(t *testing.T) {
+	decoded, err := DecodeLog(types.Log{
+		Topics: []common.Hash{
+			topicMarketFinalized,
+			common.BigToHash(big.NewInt(7)),
+		},
+	}, common.Address{})
+	if err != nil {
+		t.Fatalf("DecodeLog() error = %v", err)
+	}
+	if decoded.Type != EventMarketFinalized {
+		t.Fatalf("event type = %s", decoded.Type)
+	}
+
+	var payload MarketFinalizedPayload
+	if err := json.Unmarshal(decoded.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.MarketID != "7" {
 		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }
