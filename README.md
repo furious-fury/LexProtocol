@@ -49,11 +49,28 @@ Verify DB connectivity (with Postgres running):
 go test -tags=integration ./backend/internal/storage/...
 ```
 
-### Run services (stubs)
+### Indexer service
 
 ```bash
+export DATABASE_URL="postgres://lexprotocol:lexprotocol@localhost:5432/lexprotocol?sslmode=disable"
+export RPC_WS_URL="ws://127.0.0.1:8545"
+export RPC_HTTP_URL="http://127.0.0.1:8545"
+export MARKET_FACTORY_ADDRESS="<deployed_market_factory_address>"
+export START_BLOCK="0"
+export INDEXER_CONFIRMATIONS="2"
+export INDEXER_HTTP_ADDR=":8090"
+
 go run ./backend/cmd/indexer
 ```
+
+Then call:
+
+```bash
+curl http://localhost:8090/healthz
+curl -N http://localhost:8090/events
+```
+
+The indexer stores pending logs, promotes confirmed logs to Postgres, writes normalized market/trade/oracle/settlement/redemption rows, and broadcasts confirmed events over SSE.
 
 ### Pricing service
 
